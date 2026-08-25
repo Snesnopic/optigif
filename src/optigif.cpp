@@ -71,6 +71,7 @@ Result recompress_stream(Stream& stream, std::vector<uint8_t>& output, const Opt
 
     // restructuring can lose on some inputs, so the plain encode is kept as a floor
     std::vector<uint8_t> fallback;
+    bool reuse_optimizer_bytes = false;
     if (restructure) {
         Stream plain = stream;
         if (!options.copy_lzw) encode_frames(plain, options);
@@ -82,14 +83,20 @@ Result recompress_stream(Stream& stream, std::vector<uint8_t>& output, const Opt
         optimize_options.level = options.level;
         optimize_options.deinterlace = !options.keep_interlace;
         optimize_options.threads = options.search.threads;
+        optimize_options.encode = options.encode;
         const auto stats = optimize(stream, optimize_options);
         if (!stats.skipped.empty())
             result.restructure_note = stats.skipped;
         else
             result.restructured = true;
+        // choosing between the transparency variants meant encoding them, so the winner
+        // already carries the bytes this stream writes; only a search can still beat them
+        reuse_optimizer_bytes =
+            stats.frames_encoded && !options.search_restarts && !options.search_parse;
     }
 
-    if (!options.copy_lzw || restructure) encode_frames(stream, options);
+    if ((!options.copy_lzw || restructure) && !reuse_optimizer_bytes)
+        encode_frames(stream, options);
 
     WriteOptions write_options;
     write_options.reblock_lzw = options.reblock_lzw;

@@ -600,54 +600,57 @@ private:
             unsigned slot;
         };
         std::vector<Job> jobs;
+        std::vector<uint8_t> has_variants(stream_.frames.size(), 0);
         for (std::size_t i = 0; i < stream_.frames.size(); ++i) {
-            if (transparent_index_[i].empty() && greedy_index_[i].empty() &&
-                lone_index_[i].empty()) {
-                stream_.frames[i].pixels = std::move(plain_index_[i]);
-                plain_index_[i].shrink_to_fit();
-                stream_.frames[i].pixels_complete = true;
-                continue;
-            }
+            has_variants[i] = static_cast<uint8_t>(!transparent_index_[i].empty() ||
+                                                   !greedy_index_[i].empty() ||
+                                                   !lone_index_[i].empty());
             // slot 0 always runs, empty or not, because it is the baseline every other
-            // candidate has to beat
+            // candidate has to beat, and because its bytes are the output when it wins
             jobs.push_back({i, 0u});
+            if (!has_variants[i]) continue;
             for (unsigned slot = 1; slot < 4; ++slot)
                 if (!(*variants[slot])[i].empty()) jobs.push_back({i, slot});
         }
 
-        std::vector<std::size_t> sizes(jobs.size());
+        // the bytes are kept, not just their length: choosing the winner already encoded
+        // it, and encoding it a second time to emit it was a quarter of this stage
+        std::vector<EncodeResult> encoded(jobs.size());
         parallel_for(jobs.size(), threads_, [&](std::size_t j, unsigned) {
             const Frame& f = stream_.frames[jobs[j].frame];
-            sizes[j] = encode_lzw((*variants[jobs[j].slot])[jobs[j].frame], f.width, f.height,
-                                  f.interlaced, effective_palette_size(f, stream_))
-                           .lzw.size();
+            encoded[j] = encode_lzw((*variants[jobs[j].slot])[jobs[j].frame], f.width, f.height,
+                                    f.interlaced, effective_palette_size(f, stream_),
+                                    options_.encode);
         });
 
         // the winner is picked here, off the threads, so it depends on the sizes and on
         // the fixed slot order rather than on how the work was split
         for (std::size_t j = 0; j < jobs.size();) {
             const std::size_t i = jobs[j].frame;
-            unsigned best = jobs[j].slot;
-            std::size_t best_size = sizes[j];
+            std::size_t choice = j;
             std::size_t next = j + 1;
             for (; next < jobs.size() && jobs[next].frame == i; ++next)
-                if (sizes[next] < best_size) {
-                    best_size = sizes[next];
-                    best = jobs[next].slot;
-                }
+                if (encoded[next].lzw.size() < encoded[choice].lzw.size()) choice = next;
+            const unsigned best = jobs[choice].slot;
+
             Frame& f = stream_.frames[i];
             f.pixels = std::move((*variants[best])[i]);
+            f.lzw = std::move(encoded[choice].lzw);
+            f.lzw_min_code_size = encoded[choice].min_code_size;
             for (auto* variant : variants) {
                 (*variant)[i].clear();
                 (*variant)[i].shrink_to_fit();
             }
-            if (best != 0)
-                stats_.transparency_used = true;
-            else if (!frame_needs_transparency_[i])
-                f.transparent = -1;
+            if (has_variants[i]) {
+                if (best != 0)
+                    stats_.transparency_used = true;
+                else if (!frame_needs_transparency_[i])
+                    f.transparent = -1;
+            }
             f.pixels_complete = true;
             j = next;
         }
+        stats_.frames_encoded = true;
     }
 
     // a viewer only reads the background as transparent when the first frame declares a
@@ -674,6 +677,9 @@ private:
         first.transparent = static_cast<int>(map->colors.size());
         first.has_gce = true;
         map->colors.push_back(Color{});
+        // a wider table can widen the initial code size, so the bytes measured before it
+        // grew are no longer the bytes this stream encodes to
+        stats_.frames_encoded = false;
     }
 
     Stream& stream_;

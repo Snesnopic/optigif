@@ -32,9 +32,9 @@ want gifsicle.
 
 GIF admits two different invariants, and a tool has to say which one it promises.
 
-| level | what stays identical | example transformation |
-|---|---|---|
-| **L1 — structure** | frame count, per-frame geometry, indices, palette | re-encoding the LZW bitstream |
+| level              | what stays identical                                      | example transformation                                                                                                |
+|--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| **L1 — structure** | frame count, per-frame geometry, indices, palette         | re-encoding the LZW bitstream                                                                                         |
 | **L2 — rendering** | the animation as played: pixels over time, total duration | cropping a frame to its bounding box, merging a redundant frame, pruning unused palette entries, dropping interlacing |
 
 L2 contains L1. Consumers that verify by comparing frame structure need L1; consumers
@@ -48,19 +48,30 @@ stratified 4 KB to 4 MB, animated and static, hand-drawn, photographic, scientif
 scanned. Pinned by name, size and SHA-256 in `bench/corpus.manifest.json`.
 Machine: Apple M2 Pro, 10 cores, Release.
 
-| mode | total | vs original | time |
-|---|---|---|---|
-| original | 31 625 992 B | — | — |
-| `--copy` (container rewrite only) | 31 622 906 B | −0.01 % | 0.1 s |
-| default (re-encode LZW) | 30 798 920 B | −2.62 % | 1.6 s |
-| `gifsicle -O3`, for reference | 29 082 967 B | −8.04 % | 4.8 s |
-| `-O --strip` | 29 024 849 B | **−8.22 %** | 6.8 s, 3.8 s at `-j 0` |
-| `-O --strip --lookahead 4` | 28 989 881 B | **−8.34 %** | 29.7 s |
-| `-O -s --strip -j 0` | 27 871 612 B | **−11.87 %** | 1.8 min |
+| mode                              | total        | vs original  | time                   |
+|-----------------------------------|--------------|--------------|------------------------|
+| original                          | 31 625 992 B | —            | —                      |
+| `--copy` (container rewrite only) | 31 622 906 B | −0.01 %      | 0.1 s                  |
+| default (re-encode LZW)           | 30 798 920 B | −2.62 %      | 1.6 s                  |
+| `gifsicle -O3`, for reference     | 29 082 967 B | −8.04 %      | 4.8 s                  |
+| `-O --strip`                      | 29 024 849 B | **−8.22 %**  | 6.8 s, 3.8 s at `-j 0` |
+| `-O --strip --lookahead 4`        | 28 989 881 B | **−8.34 %**  | 29.7 s                 |
+| `-O -s --strip -j 0`              | 27 871 612 B | **−11.87 %** | 1.8 min                |
+
+Single threaded, which is how a consumer with its own thread pool has to run it, the
+restart search trades size for time through `--alignment` on a curve worth knowing:
+
+| alignment     | vs original | time, one thread |
+|---------------|-------------|------------------|
+| 2560          | −10.99 %    | 47.6 s           |
+| 1280          | −11.20 %    | 86.5 s           |
+| 640           | −11.48 %    | 164.1 s          |
+| 320           | −11.76 %    | 320.1 s          |
+| 160 (default) | −11.87 %    | 633.6 s          |
 
 On the 29-file subset where the established pipeline can finish at all, gifsicle piped
-into flexiGIF gives −11.43 % and spends about 737 s inside flexiGIF; `-O -s` gives
-**−12.03 % in 16 s**. On the whole corpus that pipeline does not finish, so −11.87 % is
+into flexiGIF gives −11.43 % and spends about 737 s inside flexiGIF; `-O -s --strip` on
+one thread gives **−12.94 % in 28.7 s**. On the whole corpus that pipeline does not finish, so −11.87 % is
 a number that did not previously exist.
 
 `bench/report.py` re-derives this table and checks every output with `gifdiff`. Sizes
@@ -75,6 +86,9 @@ are deterministic; timings mean nothing on a loaded machine.
 * **A read/write round trip is byte-identical on 50/51 files.** The exception carries
   3086 bytes of zero padding after the GIF trailer, dropped on purpose.
 * **Every optimized output is rendering-identical** (`gifdiff -w`), at every setting.
+* **The same bytes come out on a big endian machine.** Built and run under s390x, the
+  916 checks pass and all sixteen reference outputs hash identically to the ones an
+  ARM64 little endian build produces, in `--copy` and in `-O -s --strip` alike.
 * 916 unit checks, run also under AddressSanitizer, UndefinedBehaviorSanitizer and
   ThreadSanitizer; two libFuzzer targets; a fuzz run and an external-consumer build on
   every push, across 11 platforms.
@@ -126,17 +140,17 @@ optigif [options] <input.gif> [output.gif]
 What each knob is worth, measured over the corpus, so the cost is a decision rather
 than a guess:
 
-| knob | worth | cost |
-|---|---|---|
-| `-O` | −5.4 pp | seconds |
-| `-s` | −3.6 pp | minutes |
-| dropping interlacing (on by default) | −0.15 % | free |
-| `--lookahead 4` without `-s` | −0.11 % | 4x |
-| `--lookahead 4` with `-s` | −0.008 % | 1.2x |
-| `--alignment` 160 to 10 | −0.16 % | 16x |
-| `--both-clears` | −0.004 % | 1.5x |
-| `-b` | −0.0003 % | 4x |
-| `--careful` | **+0.009 %** | free |
+| knob                                 | worth        | cost    |
+|--------------------------------------|--------------|---------|
+| `-O`                                 | −5.4 pp      | seconds |
+| `-s`                                 | −3.6 pp      | minutes |
+| dropping interlacing (on by default) | −0.15 %      | free    |
+| `--lookahead 4` without `-s`         | −0.11 %      | 4x      |
+| `--lookahead 4` with `-s`            | −0.008 %     | 1.2x    |
+| `--alignment` 160 to 10              | −0.16 %      | 16x     |
+| `--both-clears`                      | −0.004 %     | 1.5x    |
+| `-b`                                 | −0.0003 %    | 4x      |
+| `--careful`                          | **+0.009 %** | free    |
 
 ## Using it as a library
 
@@ -276,16 +290,19 @@ pixel. That took the optimizer's peak from 17 to 9 bytes per pixel, 511 MB down 
 
 ## Known gaps
 
-* **Endianness is unverified.** CI compiles on 11 platforms but runs the correctness
-  gates only on Linux x64, and the reader and writer do binary I/O by hand.
-* **The corpus comes from one source.** 51 files from Wikimedia Commons, mostly
-  encyclopedic material. GIFs from Photoshop, screen recorders or the 1990s web have
-  different encoder habits and might hide both bugs and gains.
+* **The corpus is pinned to one source.** The reproducible corpus is 51 files from
+  Wikimedia Commons, mostly encyclopedic material. A second, unpinned set of 665 files
+  (2.0 GB) was used as extra coverage and found no problems, but it is not part of the
+  repository, so its numbers cannot be re-derived by anyone else.
 * **`-x` is usable on small frames only**: 16 s for a 5 KB file. The dominant cost is
   copying a dictionary per branch of the search.
 * **The restart search is O(n²/alignment)**; parallelism made it practical, not cheap.
 * About 7 KB of residual on one 475-frame animation, now below the corpus noise.
-* No release, no package, no man page; the library API is young and unstable.
+* **No deadline and no memory ceiling in the API.** A caller handed a hostile file has
+  no way to bound either: the search is O(n²/alignment) and the optimizer holds nine
+  bytes per pixel of the whole canvas.
+* No man page, and the library API is young: it follows semantic versioning from 1.0.0
+  but has had no consumer other than the tests long enough to settle.
 
 ## Reproducing the numbers
 

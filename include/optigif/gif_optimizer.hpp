@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "optigif/gif_encoder.hpp"
 #include "optigif/gif_types.hpp"
 
 namespace optigif {
@@ -43,6 +44,11 @@ struct OptimizeOptions {
     /// variants by encoding them. Frames are independent by then and the choice is a
     /// size comparison, so the result does not depend on how the work was split.
     unsigned threads = 1u;
+
+    /// Code size and restart policy used to measure the candidates. Choosing between
+    /// them means encoding them, so the winner's bytes are the final bytes whenever
+    /// these match what the caller would encode with; see OptimizeStats::frames_encoded.
+    EncodeOptions encode;
 };
 
 /** @brief What the optimizer did, or why it did nothing. */
@@ -55,6 +61,11 @@ struct OptimizeStats {
     std::size_t colors_after = 0;    ///< Distinct colours actually kept.
     bool transparency_used = false;  ///< At least one frame shows the canvas through.
     bool local_colormaps = false;    ///< The colours did not fit one shared table.
+
+    /// Every frame already carries the LZW bytes of the variant that won, encoded with
+    /// OptimizeOptions::encode. A caller using those same options can write the stream
+    /// as it stands instead of encoding it again.
+    bool frames_encoded = false;
     std::string skipped;             ///< Non-empty when the stream was left untouched, with the reason.
 };
 
