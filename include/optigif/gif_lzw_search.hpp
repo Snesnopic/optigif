@@ -29,6 +29,11 @@ struct SearchOptions {
     /// 1 keeps everything on the calling thread, 0 asks the machine how many it has.
     /// The result is identical either way; only the wall clock changes.
     unsigned threads = 1u;
+
+    /// Runs the parallel work on the caller's own loop instead of on threads started here;
+    /// @ref threads is then how many it has. Frames are spread over it too, since its work
+    /// can nest. The result is the same either way.
+    ParallelFor parallel_for;
 };
 
 /** @brief The encoded stream the search settled on, with what it did to get there. */

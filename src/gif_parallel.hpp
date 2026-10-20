@@ -9,6 +9,8 @@
 #include <thread>
 #include <vector>
 
+#include "optigif/gif_types.hpp"
+
 namespace optigif {
 
 /**
@@ -43,6 +45,26 @@ void parallel_for(std::size_t count, unsigned threads, Body body) {
     }
     for (std::size_t i = 0; i < std::min(count, block); ++i) body(i, 0u);
     for (auto& t : pool) t.join();
+}
+
+/**
+ * @brief Same as above, on the caller's own loop when @p run is set.
+ *
+ * Each of the contiguous blocks becomes one item of @p run and is walked by whichever
+ * thread takes it, so @c worker still names scratch space that no other thread touches.
+ */
+template <typename Body>
+void parallel_for(const ParallelFor& run, std::size_t count, unsigned threads, Body body) {
+    if (!run || threads <= 1 || count <= 1) {
+        parallel_for(count, threads, body);
+        return;
+    }
+    const std::size_t workers = std::min<std::size_t>(threads, count);
+    const std::size_t block = (count + workers - 1) / workers;
+    run((count + block - 1) / block, [&](std::size_t w) {
+        const std::size_t to = std::min(count, (w + 1) * block);
+        for (std::size_t i = w * block; i < to; ++i) body(i, static_cast<unsigned>(w));
+    });
 }
 
 /**

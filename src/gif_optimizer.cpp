@@ -522,7 +522,7 @@ private:
             background_id_ == kTransparent ? 0 : to_index[background_id_];
 
         // to_index is read only from here on and every frame writes only its own slots
-        parallel_for(new_pixels_.size(), threads_, [&](std::size_t i, unsigned) {
+        parallel_for(options_.parallel_for, new_pixels_.size(), threads_, [&](std::size_t i, unsigned) {
             stream_.frames[i].local.reset();
             const auto slot = static_cast<uint8_t>(std::max(0, transparent_index[i]));
             map_variants(i, slot, [&](uint16_t v) { return to_index[v]; });
@@ -616,7 +616,7 @@ private:
         // the bytes are kept, not just their length: choosing the winner already encoded
         // it, and encoding it a second time to emit it was a quarter of this stage
         std::vector<EncodeResult> encoded(jobs.size());
-        parallel_for(jobs.size(), threads_, [&](std::size_t j, unsigned) {
+        parallel_for(options_.parallel_for, jobs.size(), threads_, [&](std::size_t j, unsigned) {
             const Frame& f = stream_.frames[jobs[j].frame];
             encoded[j] = encode_lzw((*variants[jobs[j].slot])[jobs[j].frame], f.width, f.height,
                                     f.interlaced, effective_palette_size(f, stream_),

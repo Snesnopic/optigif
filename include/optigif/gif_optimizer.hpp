@@ -45,6 +45,10 @@ struct OptimizeOptions {
     /// size comparison, so the result does not depend on how the work was split.
     unsigned threads = 1u;
 
+    /// Runs the per frame work on the caller's own loop instead of on threads started here;
+    /// @ref threads is then how many it has.
+    ParallelFor parallel_for;
+
     /// Code size and restart policy used to measure the candidates. Choosing between
     /// them means encoding them, so the winner's bytes are the final bytes whenever
     /// these match what the caller would encode with; see OptimizeStats::frames_encoded.

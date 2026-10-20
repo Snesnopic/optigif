@@ -8,11 +8,14 @@ namespace optigif {
 namespace {
 
 void encode_frames(Stream& stream, const Options& options) {
-    // the searches run their own threads inside a frame, so only the plain path is spread
-    // over frames here; either way each frame writes only its own bytes
+    // the searches start threads of their own inside a frame, so with ours only the plain
+    // path is spread over frames; a caller's loop nests, so with it every path is. either
+    // way each frame writes only its own bytes
+    const bool searching = options.search_restarts || options.search_parse;
     const unsigned threads =
-        options.search_restarts || options.search_parse ? 1u : resolve_threads(options.search.threads);
-    parallel_for(stream.frames.size(), threads, [&](std::size_t index, unsigned) {
+        searching && !options.search.parallel_for ? 1u : resolve_threads(options.search.threads);
+    parallel_for(options.search.parallel_for, stream.frames.size(), threads,
+                 [&](std::size_t index, unsigned) {
         Frame& frame = stream.frames[index];
         // a frame the decoder had to repair no longer matches its own lzw data, so
         // re-encoding it would change the image rather than just its encoding
@@ -83,6 +86,7 @@ Result recompress_stream(Stream& stream, std::vector<uint8_t>& output, const Opt
         optimize_options.level = options.level;
         optimize_options.deinterlace = !options.keep_interlace;
         optimize_options.threads = options.search.threads;
+        optimize_options.parallel_for = options.search.parallel_for;
         optimize_options.encode = options.encode;
         const auto stats = optimize(stream, optimize_options);
         if (!stats.skipped.empty())

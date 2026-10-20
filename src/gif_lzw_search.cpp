@@ -152,7 +152,8 @@ SearchResult encode_lzw_search(std::span<const uint8_t> pixels, uint16_t width, 
         const std::size_t low = high > kChunk ? high - kChunk : 0;
         const std::size_t width_of_chunk = high - low;
 
-        parallel_for(width_of_chunk, threads, [&](std::size_t idx, unsigned worker) {
+        parallel_for(search_options.parallel_for, width_of_chunk, threads,
+                     [&](std::size_t idx, unsigned worker) {
             const std::size_t k = low + idx;
             inside[idx].clear();
             far_best[idx] = kNoPath;

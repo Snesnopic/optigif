@@ -11,12 +11,19 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace optigif {
+
+/**
+ * @brief A caller's own parallel loop: runs body(i) once for every i in [0, n), on any of
+ * its threads and in any order, and returns once all of them are done.
+ */
+using ParallelFor = std::function<void(std::size_t n, const std::function<void(std::size_t)>& body)>;
 
 /** @brief One entry of a colour table. */
 struct Color {
